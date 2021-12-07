@@ -15,4 +15,6 @@ fn main() {
     println!("The answer to day 5, part 2 is {}", day5::part_2());
     println!("The answer to day 6, part 1 is {}", day6::part_1());
     println!("The answer to day 6, part 2 is {}", day6::part_2());
+    println!("The answer to day 7, part 1 is {}", day7::part_1());
+    println!("The answer to day 7, part 2 is {}", day7::part_2());
 }
