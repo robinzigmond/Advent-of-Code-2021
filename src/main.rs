@@ -21,4 +21,6 @@ fn main() {
     println!("The answer to day 8, part 2 is {}", day8::part_2());
     println!("The answer to day 9, part 1 is {}", day9::part_1());
     println!("The answer to day 9, part 2 is {}", day9::part_2());
+    println!("The answer to day 10, part 1 is {}", day10::part_1());
+    println!("The answer to day 10, part 2 is {}", day10::part_2());
 }
