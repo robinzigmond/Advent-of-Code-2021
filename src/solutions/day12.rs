@@ -24,6 +24,8 @@ struct Connection {
 #[derive(PartialEq, Clone)]
 struct Path {
     path: Vec<Room>,
+    // property needed for part 2
+    visited_small_twice: bool,
 }
 
 // for my own debugging - but useful enough to keep in!
@@ -31,7 +33,7 @@ impl fmt::Debug for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Path: {}",
+            "{}",
             self.path
                 .iter()
                 .map(|room| room.name.to_owned())
@@ -53,6 +55,32 @@ impl Path {
             }
         }
         is_valid
+    }
+
+    // adjusted version for part 2.
+    // Returns a second bool to indicate if a small room was visited for the first time or
+    // not, so that we can update the visited_small_twice property if this happens.
+    // (Note, we don't do this in here making &self mutable, as then it would get tricky to
+    // filter by this function - the property would be updated at the wrong time!)
+    fn is_valid_2(&self, room: &Room) -> (bool, bool) {
+        let mut is_valid = true;
+        let mut visited_small_again = false;
+        let is_small = !room.is_large();
+        if is_small {
+            // check how many times it's been visited already
+            let previous_visits = self.path.iter().filter(|&visited| visited == room).count();
+            // check if any small rooms have been visited twice already
+            if previous_visits > 1 {
+                is_valid = false;
+            } else if previous_visits == 1 {
+                if self.visited_small_twice || room.name == "start" || room.name == "end" {
+                    is_valid = false;
+                } else {
+                    visited_small_again = true;
+                }
+            }
+        }
+        (is_valid, visited_small_again)
     }
 
     fn add_room(&self, room: Room) -> Self {
@@ -98,96 +126,106 @@ impl Map {
         connections
     }
 
-    // note: end is a small cave, so it's not allowed to visit it more than once.
-    // So we assume here that we're finished with a path when we reach the "target"
-    fn all_paths_recursive(
+    fn count_all_paths_recursive(
         &self,
         connections: &HashMap<Room, Vec<&Room>>,
         start: Room,
         target: Room,
         so_far: Path,
-        nexts: &Vec<Vec<Room>>,
-        already_known: &mut Vec<Path>,
-    ) -> Vec<Path> {
-        //println!("recursive call!");
-        //println!("current path has length {:?}", so_far.path.len());
-        //println!("found {:?} paths so far", already_known.len());
+        mut count: &mut usize,
+    ) -> usize {
         let current_room = so_far.path.iter().last().unwrap();
-        let mut current_path = so_far.clone();
-        let mut new_nexts = nexts.clone();
+        let current_path = so_far.clone();
         if current_room == &target {
-            // we've reached the target so can just add the current path to the collection
-            already_known.push(current_path.clone());
-            // need to "reset" so_far by figuring out the next path to take
-            new_nexts.reverse();
-            let length = new_nexts.len();
-            let mut next_room = Room {
-                name: String::from("SHOULD NOT EXIST"),
-            }; // need to initialise with something!
-            let mut next_index = 0;
-            for i in 0..length {
-                if !new_nexts[i].is_empty() {
-                    next_index = i;
-                    next_room = new_nexts[i][0].clone();
-                    break;
-                }
-            }
-            // if next_index is 0, we have finished
-            if next_index > 0 {
-                new_nexts.reverse();
-                new_nexts = new_nexts[0..(length - next_index - 1)].to_vec();
-                //need to push something onto new_nexts here, the "next next".
-                //How to get it?? Do we have to carry a bunch more state around in function arguments?
-                //probably yes - rather than an options, have an array (vec) of all those still to go
-                //(now done it, just here left to change!!!)
-                //NOTE: ALSO need to ensure we remove the actual "next" used from the sub-vector it's
-                //part of!
-                let mut next_path = current_path.path[0..(length - next_index - 1)].to_vec();
-                next_path.push(next_room);
-                current_path = Path { path: next_path };
-            }
-
-            println!("exit found on path {:?}", so_far);
-            println!("now {:?} paths have been found", already_known.len());
-            println!("nexts to take forward: {:?}", new_nexts);
-            println!("next path is {:?}", current_path);
+            // we've reached the target so can just add 1 to the number of paths
+            *count += 1;
+            // we shouldn't continue any more (as no path, even for part 2, can reach the end twice)
+            // The return value is actually irrelevant but we need something of the correct type.
+            return 0;
         }
-        let can_go_next: Vec<Room> = connections
-            .get(current_room)
-            .unwrap()
+        let can_go_next = connections.get(current_room).unwrap();
+        for &next in can_go_next
             .iter()
-            .map(|&room| room.clone())
-            .filter(|room| so_far.is_valid(room))
-            .collect();
-        //head of loop needs to change, use index version so can slice
-        for i in 0..can_go_next.len() {
-            let next = can_go_next[i].clone();
-            let after = can_go_next[i + 1..].to_vec();
-            new_nexts.push(after);
+            .filter(|room| current_path.is_valid(room))
+        {
             let extended = current_path.add_room(next.clone());
             // now the recursive call to find the way forward from here
-
-            self.all_paths_recursive(
+            self.count_all_paths_recursive(
                 connections,
                 start.clone(),
                 target.clone(),
                 extended,
-                &new_nexts,
-                already_known,
+                &mut count,
             );
         }
-        already_known.to_owned()
+        *count
     }
 
-    fn all_paths(&self, start: Room, end: Room) -> Vec<Path> {
+    // mostly a copy of the previous one, but uses is_valid_2 rather than is_valid,
+    // with changes a bit trickier than can be easily done by just passing a function parameter
+    fn count_all_paths_recursive_2(
+        &self,
+        connections: &HashMap<Room, Vec<&Room>>,
+        start: Room,
+        target: Room,
+        so_far: Path,
+        mut count: &mut usize,
+    ) -> usize {
+        let current_room = so_far.path.iter().last().unwrap();
+        if current_room == &target {
+            // we've reached the target so can just add 1 to the number of paths
+            *count += 1;
+            // we shouldn't continue any more (as no path, even for part 2, can reach the end twice)
+            // The return value is actually irrelevant but we need something of the correct type.
+            return 0;
+        }
+        let can_go_next = connections.get(current_room).unwrap();
+        for &next in can_go_next {
+            let (is_valid, update_flag) = so_far.is_valid_2(next);
+            if is_valid {
+                let mut current_path = so_far.clone();
+                if update_flag {
+                    current_path.visited_small_twice = true;
+                }
+                let extended = current_path.add_room(next.clone());
+                // now the recursive call to find the way forward from here
+                self.count_all_paths_recursive_2(
+                    connections,
+                    start.clone(),
+                    target.clone(),
+                    extended,
+                    &mut count,
+                );
+            }
+        }
+        *count
+    }
+
+    fn count_paths(&self, start: Room, end: Room) -> usize {
         let connections = self.connections_cached();
-        self.all_paths_recursive(
+        self.count_all_paths_recursive(
             &connections,
             start.clone(),
             end,
-            Path { path: vec![start] },
-            &vec![vec![]],
-            &mut vec![],
+            Path {
+                path: vec![start],
+                visited_small_twice: false,
+            },
+            &mut 0,
+        )
+    }
+
+    fn count_paths_2(&self, start: Room, end: Room) -> usize {
+        let connections = self.connections_cached();
+        self.count_all_paths_recursive_2(
+            &connections,
+            start.clone(),
+            end,
+            Path {
+                path: vec![start],
+                visited_small_twice: false,
+            },
+            &mut 0,
         )
     }
 }
@@ -216,7 +254,7 @@ fn read_file() -> Map {
 }
 
 fn solve_part_1(map: Map) -> usize {
-    map.all_paths(
+    map.count_paths(
         Room {
             name: String::from("start"),
         },
@@ -224,10 +262,25 @@ fn solve_part_1(map: Map) -> usize {
             name: String::from("end"),
         },
     )
-    .len()
+}
+
+fn solve_part_2(map: Map) -> usize {
+    map.count_paths_2(
+        Room {
+            name: String::from("start"),
+        },
+        Room {
+            name: String::from("end"),
+        },
+    )
 }
 
 pub fn part_1() -> usize {
     let map = read_file();
     solve_part_1(map)
+}
+
+pub fn part_2() -> usize {
+    let map = read_file();
+    solve_part_2(map)
 }
