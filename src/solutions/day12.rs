@@ -106,39 +106,73 @@ impl Map {
         start: Room,
         target: Room,
         so_far: Path,
+        nexts: &Vec<Vec<Room>>,
         already_known: &mut Vec<Path>,
     ) -> Vec<Path> {
         //println!("recursive call!");
-        println!("currently traversed: {:?}", so_far);
         //println!("current path has length {:?}", so_far.path.len());
-        println!("paths already found: {:?}", already_known);
         //println!("found {:?} paths so far", already_known.len());
         let current_room = so_far.path.iter().last().unwrap();
-        let current_path = so_far.clone();
+        let mut current_path = so_far.clone();
+        let mut new_nexts = nexts.clone();
         if current_room == &target {
             // we've reached the target so can just add the current path to the collection
             already_known.push(current_path.clone());
-            //need to "reset" so_far - but how?
-            //Can do either via making mutable like already_known, or by a recursive call -
-            //but both ways lead to problems. (Much the same problems conceptually, in fact!)
-            //And how do we know what to reset *to*? Tried that before, logic was mostly right
-            //but it was the "reset" that caused problems in some cases.
+            // need to "reset" so_far by figuring out the next path to take
+            new_nexts.reverse();
+            let length = new_nexts.len();
+            let mut next_room = Room {
+                name: String::from("SHOULD NOT EXIST"),
+            }; // need to initialise with something!
+            let mut next_index = 0;
+            for i in 0..length {
+                if !new_nexts[i].is_empty() {
+                    next_index = i;
+                    next_room = new_nexts[i][0].clone();
+                    break;
+                }
+            }
+            // if next_index is 0, we have finished
+            if next_index > 0 {
+                new_nexts.reverse();
+                new_nexts = new_nexts[0..(length - next_index - 1)].to_vec();
+                //need to push something onto new_nexts here, the "next next".
+                //How to get it?? Do we have to carry a bunch more state around in function arguments?
+                //probably yes - rather than an options, have an array (vec) of all those still to go
+                //(now done it, just here left to change!!!)
+                //NOTE: ALSO need to ensure we remove the actual "next" used from the sub-vector it's
+                //part of!
+                let mut next_path = current_path.path[0..(length - next_index - 1)].to_vec();
+                next_path.push(next_room);
+                current_path = Path { path: next_path };
+            }
+
+            println!("exit found on path {:?}", so_far);
+            println!("now {:?} paths have been found", already_known.len());
+            println!("nexts to take forward: {:?}", new_nexts);
+            println!("next path is {:?}", current_path);
         }
-        let can_go_next = connections.get(current_room).unwrap();
-        for &next in can_go_next.iter().filter(|room| so_far.is_valid(room)) {
+        let can_go_next: Vec<Room> = connections
+            .get(current_room)
+            .unwrap()
+            .iter()
+            .map(|&room| room.clone())
+            .filter(|room| so_far.is_valid(room))
+            .collect();
+        //head of loop needs to change, use index version so can slice
+        for i in 0..can_go_next.len() {
+            let next = can_go_next[i].clone();
+            let after = can_go_next[i + 1..].to_vec();
+            new_nexts.push(after);
             let extended = current_path.add_room(next.clone());
             // now the recursive call to find the way forward from here
-            //need to somehow "look ahead" and find the "next path" to check in sequence,
-            //if we happen to be at the end. For most cases it's just the next step of
-            //the loop but if we're at the end we need to "unwind".
-            //Going to have to go back to earlier approach of "leaving breadcrumbs", then
-            //- even though I went back to the mutable approach to try to avoid that after
-            //having difficulties!
+
             self.all_paths_recursive(
                 connections,
                 start.clone(),
                 target.clone(),
                 extended,
+                &new_nexts,
                 already_known,
             );
         }
@@ -152,6 +186,7 @@ impl Map {
             start.clone(),
             end,
             Path { path: vec![start] },
+            &vec![vec![]],
             &mut vec![],
         )
     }
