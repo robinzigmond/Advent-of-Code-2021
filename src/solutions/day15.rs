@@ -2,14 +2,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 
-// attempting to write my own implementation of Djikstra's algorithm. It works!
-// But is not very performant - the main stumbling block is how to implement the priority queue.
-// I initially had an array (Vector, in Rust), but that took a long time (more than 3 minutes, even
-// when compiled in release mode). The current code uses a Hashmap, to at least run in constant space
-// and have fast lookups/insertions - but at the cost, of course, of making it less efficient (O(n))
-// to find the lowest-priority node. This has improved the runtime to about 1 minute (when compiled for
-// release - "cargo run" takes over 4 minutes) - but that's clearly already slower than intended, and
-// will not work well at all for part 2. So I'm looking up better ways to do it!
+// attempting to write my own implementation of Djikstra's algorithm. This has been through many improvements
+// but my solution still takes around 45 seconds for part 2, even when compiled in release mode.
+// It must be possible to do better, but I'm no longer too inclined to squeeze more performance out of this!
 
 #[derive(Clone, Debug)]
 struct Node {
@@ -22,7 +17,7 @@ struct Node {
 }
 
 impl Node {
-    fn new(nums: Vec<Vec<u8>>, row: usize, col: usize) -> Node {
+    fn new(nums: &Vec<Vec<u8>>, row: usize, col: usize) -> Node {
         let value = nums[row][col];
         let height = nums.len();
         let width = nums[0].len();
@@ -53,7 +48,7 @@ impl Node {
 
 struct Djikstra {
     nodes: HashMap<(usize, usize), Node>,
-    priority_queue: HashMap<(usize, usize), Option<usize>>,
+    priority_list: Vec<(usize, usize)>,
     width: usize,
     height: usize,
 }
@@ -63,17 +58,18 @@ impl Djikstra {
         let height = nums.len();
         let width = nums[0].len();
         let mut nodes = HashMap::new();
-        let mut priority_queue = HashMap::new();
+        let priority_list = vec![];
         for row in 0..height {
             for col in 0..width {
-                let node = Node::new(nums.clone(), row, col);
+                let node = Node::new(&nums, row, col);
                 nodes.insert((row, col), node);
-                priority_queue.insert((row, col), None);
             }
         }
+        // starting with empty priority list so we don't have an enormous array to start with.
+        // Nodes will be inserted as they are needed (see update_queue method)
         Djikstra {
             nodes,
-            priority_queue,
+            priority_list,
             height,
             width,
         }
@@ -83,31 +79,54 @@ impl Djikstra {
         self.nodes.get(&(*row, *col)).unwrap().clone()
     }
 
-    fn get_next_node(&self) -> Node {
-        let mut min = None;
-        let mut node_coords = None;
-        for ((row, col), option_distance) in &self.priority_queue {
-            if let Some(dist) = option_distance {
-                if min.is_none() || dist < min.unwrap() {
-                    let node = self.get_node(row, col);
-                    if !node.visited {
-                        min = Some(dist);
-                        node_coords = Some((row, col));
-                    }
-                }
+    // gets the next node AND removes it from the priority list.
+    // (This is more efficient, to keep the list small - the node won't be needed again afterward)
+    fn get_next_node(&mut self) -> Node {
+        let mut found_node = None;
+        for (row, col) in &self.priority_list {
+            let node = self.get_node(row, col);
+            if !node.visited {
+                found_node = Some(node);
+                break;
             }
         }
-        let (row, col) = node_coords.unwrap();
-        self.get_node(row, col)
+        let actual_node = found_node.unwrap();
+        self.priority_list = self
+            .priority_list
+            .iter()
+            .filter(|(row, col)| row != &actual_node.row || col != &actual_node.col)
+            .map(|&pair| pair)
+            .collect();
+        actual_node
     }
 
-    fn update_queue(&mut self, row: usize, col: usize, new_distance: usize) {
-        self.priority_queue.insert((row, col), Some(new_distance));
+    // updates queue by simply re-adding the (row, col) pair at the now-correct point.
+    // It DOES NOT remove anything - firstly it does not need to (the newer one has lower priority so
+    // is inserted earlier, so will always be find first), secondly the performance-killing memory issue
+    // of carrying around an ever-growing array of over 10,000 elements is removed (in the get_next_node
+    // method) by removing an item from the queue as soon as it has been used.
+    fn update_queue(&mut self, row: &usize, col: &usize, new_distance: usize) {
+        let mut index = 0;
+        let insert_index = loop {
+            if index >= self.priority_list.len() {
+                // means we haven't found the node yet. So let's insert it!
+                self.priority_list.push((*row, *col));
+                return;
+            }
+            let (old_row, old_col) = self.priority_list[index];
+            let distance = self.get_node(&old_row, &old_col).distance_to;
+            if distance.is_none() || distance.unwrap() > new_distance {
+                // node found here
+                break index;
+            }
+            index += 1;
+        };
+        // insert the found note into the list at the appropriate index
+        self.priority_list.insert(insert_index, (*row, *col));
     }
 
     fn do_step(&mut self, destination: (usize, usize)) -> Option<usize> {
         let mut node = self.get_next_node();
-        //println!("next node: {:?}", node);
         for (row, col) in &node.connected {
             let mut connected_node = self.get_node(&row, &col);
             if !connected_node.visited {
@@ -122,7 +141,7 @@ impl Djikstra {
                         (connected_node.row, connected_node.col),
                         connected_node.clone(),
                     );
-                    self.update_queue(*row, *col, new_val);
+                    self.update_queue(row, col, new_val);
                 }
             }
         }
@@ -141,31 +160,27 @@ impl Djikstra {
         let mut starting_node = self.get_node(&start_row, &start_col);
         starting_node.distance_to = Some(0);
         self.nodes.insert(start, starting_node);
-        self.priority_queue.insert((start_row, start_col), Some(0));
+        self.priority_list.insert(0, (start_row, start_col));
         let mut res = None;
-        let mut count = 1;
         while res.is_none() {
-            println!("visiting node #{}", count);
             res = self.do_step(destination);
-            count += 1;
         }
         res.unwrap()
     }
 }
 
-fn read_file() -> Djikstra {
+fn read_file() -> Vec<Vec<u8>> {
     let mut file = File::open("./input/input15.txt").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
-    let nums = contents
+    contents
         .lines()
         .map(|line| {
             line.chars()
                 .map(|digit| digit.to_string().parse().unwrap())
                 .collect()
         })
-        .collect();
-    Djikstra::new(nums)
+        .collect()
 }
 
 fn solve_part_1(mut nodes: Djikstra) -> usize {
@@ -175,6 +190,50 @@ fn solve_part_1(mut nodes: Djikstra) -> usize {
 }
 
 pub fn part_1() -> usize {
-    let nodes = read_file();
+    let nums = read_file();
+    let nodes = Djikstra::new(nums);
+    solve_part_1(nodes)
+}
+
+fn increment(num: u8) -> u8 {
+    if num == 9 {
+        1
+    } else {
+        num + 1
+    }
+}
+
+fn increment_times(num: u8, times: usize) -> u8 {
+    let mut res = num;
+    for _ in 0..times {
+        res = increment(res);
+    }
+    res
+}
+
+pub fn part_2() -> usize {
+    let nums = read_file();
+    let height = nums.len();
+    let width = nums[0].len();
+    let mut more_nums = vec![];
+    //println!("building grid");
+    for tile_row in 0..5 {
+        for row in 0..height {
+            let mut new_row = vec![];
+            for tile_col in 0..5 {
+                for col in 0..width {
+                    let reference = nums[row][col];
+                    let new_val = increment_times(reference, tile_row + tile_col);
+                    new_row.push(new_val);
+                }
+            }
+            more_nums.push(new_row);
+            //println!("row #{} done", height * tile_row + row);
+        }
+    }
+    //println!("new grid is {:?}", more_nums);
+    //println!("starting to build starting Djikstra structure");
+    let nodes = Djikstra::new(more_nums);
+    //println!("and finished!");
     solve_part_1(nodes)
 }
