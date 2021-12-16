@@ -216,7 +216,6 @@ pub fn part_2() -> usize {
     let height = nums.len();
     let width = nums[0].len();
     let mut more_nums = vec![];
-    //println!("building grid");
     for tile_row in 0..5 {
         for row in 0..height {
             let mut new_row = vec![];
@@ -228,12 +227,8 @@ pub fn part_2() -> usize {
                 }
             }
             more_nums.push(new_row);
-            //println!("row #{} done", height * tile_row + row);
         }
     }
-    //println!("new grid is {:?}", more_nums);
-    //println!("starting to build starting Djikstra structure");
     let nodes = Djikstra::new(more_nums);
-    //println!("and finished!");
     solve_part_1(nodes)
 }
