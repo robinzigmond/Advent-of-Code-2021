@@ -3,7 +3,7 @@ mod solutions;
 use crate::solutions::*;
 
 fn main() {
-    println!("The answer to day 1, part 1 is {}", day1::part_1());
+    /*println!("The answer to day 1, part 1 is {}", day1::part_1());
     println!("The answer to day 1, part 2 is {}", day1::part_2());
     println!("The answer to day 2, part 1 is {}", day2::part_1());
     println!("The answer to day 2, part 2 is {}", day2::part_2());
@@ -37,5 +37,6 @@ fn main() {
     println!("The answer to day 16, part 1 is {}", day16::part_1());
     println!("The answer to day 16, part 1 is {}", day16::part_2());
     println!("The answer to day 17, part 1 is {}", day17::part_1());
-    println!("The answer to day 17, part 2 is {}", day17::part_2());
+    println!("The answer to day 17, part 2 is {}", day17::part_2());*/
+    println!("The answer to day 18, part 1 is {}", day18::part_1());
 }
