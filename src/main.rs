@@ -40,4 +40,7 @@ fn main() {
     println!("The answer to day 17, part 2 is {}", day17::part_2());
     println!("The answer to day 18, part 1 is {}", day18::part_1());
     println!("The answer to day 18, part 2 is {}", day18::part_2());
+    let (ans_1, ans_2) = day19::solve();
+    println!("The answer to day 19, part 1 is {}", ans_1);
+    println!("The answer to day 19, part 2 is {}", ans_2);
 }
