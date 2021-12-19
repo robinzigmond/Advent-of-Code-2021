@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -20,16 +21,32 @@ impl BreadCrumbs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum SnailfishPart {
     Regular(usize),
     Pair(Box<Snailfish>),
 }
 
-#[derive(Debug, Clone)]
+// for debugging
+impl fmt::Debug for SnailfishPart {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SnailfishPart::Regular(n) => write!(f, "{}", n),
+            SnailfishPart::Pair(sf) => write!(f, "{}", format!("{:?}", sf)),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Snailfish {
     first: SnailfishPart,
     second: SnailfishPart,
+}
+
+impl fmt::Debug for Snailfish {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", format!("[{:?},{:?}]", self.first, self.second))
+    }
 }
 
 impl SnailfishPart {
@@ -166,7 +183,12 @@ impl Snailfish {
 
     fn find_right_number_part(&mut self, breadcrumbs: BreadCrumbs) -> Option<&mut SnailfishPart> {
         let all_nums_bc = self.find_number_breadcrumbs();
-        for bc in all_nums_bc {
+        // need to filter out any that start with our current breadcrumbs!
+        let filtered: Vec<BreadCrumbs> = all_nums_bc
+            .into_iter()
+            .filter(|crumbs| !crumbs.0.starts_with(&breadcrumbs.0))
+            .collect();
+        for bc in filtered {
             if bc > breadcrumbs {
                 let number = self.follow_for_number(bc);
                 // must be a "Some" value by design
@@ -178,8 +200,13 @@ impl Snailfish {
 
     fn find_left_number_part(&mut self, breadcrumbs: BreadCrumbs) -> Option<&mut SnailfishPart> {
         let all_nums_bc = self.find_number_breadcrumbs();
+        // need to filter out any that start with our current breadcrumbs!
+        let filtered: Vec<BreadCrumbs> = all_nums_bc
+            .into_iter()
+            .filter(|crumbs| !crumbs.0.starts_with(&breadcrumbs.0))
+            .collect();
         let mut previous = None;
-        for bc in all_nums_bc {
+        for bc in filtered {
             if bc > breadcrumbs {
                 match previous {
                     Some(previous) => {
@@ -380,7 +407,30 @@ fn solve_part_1(nums: Vec<Snailfish>) -> usize {
     sum_sf.magnitude()
 }
 
+fn solve_part_2(nums: Vec<Snailfish>) -> usize {
+    let mut highest = 0;
+    let clone1 = nums.clone();
+    for (idx1, num1) in clone1.into_iter().enumerate() {
+        let clone2 = nums.clone();
+        for (idx2, num2) in clone2.into_iter().enumerate() {
+            if idx1 == idx2 {
+                continue;
+            }
+            let sum = add_snailfish(num1.clone(), num2).magnitude();
+            if sum > highest {
+                highest = sum;
+            }
+        }
+    }
+    highest
+}
+
 pub fn part_1() -> usize {
     let pairs = read_file();
     solve_part_1(pairs)
+}
+
+pub fn part_2() -> usize {
+    let pairs = read_file();
+    solve_part_2(pairs)
 }
