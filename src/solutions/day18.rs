@@ -10,8 +10,15 @@ enum Direction {
     Right,
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 struct BreadCrumbs(Vec<Direction>);
+
+impl BreadCrumbs {
+    fn push(&mut self, dir: Direction) {
+        let dirs = &mut self.0;
+        dirs.push(dir);
+    }
+}
 
 #[derive(Debug, Clone)]
 enum SnailfishPart {
@@ -67,27 +74,39 @@ impl SnailfishPart {
         };
         false
     }
+
+    fn magnitude(&self) -> usize {
+        match self {
+            SnailfishPart::Regular(n) => *n,
+            SnailfishPart::Pair(boxed_sf) => (*boxed_sf).magnitude(),
+        }
+    }
 }
 
 impl Snailfish {
     // breadcrumb helpers
-    fn follow_breadcrumbs(&mut self, breadcrumbs: BreadCrumbs) -> Option<&mut Snailfish> {
-        let mut found = self;
-        for breadcrumb in breadcrumbs.0 {
-            let part = match breadcrumb {
-                Direction::Left => &mut found.first,
-                Direction::Right => &mut found.second,
+    fn follow_breadcrumbs(&mut self, breadcrumbs: BreadCrumbs) -> Option<&mut SnailfishPart> {
+        let mut current_crumb = breadcrumbs.0;
+        let mut current_snailfish = self;
+        loop {
+            let part = match current_crumb[0] {
+                Direction::Left => &mut current_snailfish.first,
+                Direction::Right => &mut current_snailfish.second,
             };
+            let rest = &current_crumb[1..];
+            if rest.is_empty() {
+                return Some(part);
+            }
             match part {
                 SnailfishPart::Regular(_) => {
                     return None;
                 }
-                SnailfishPart::Pair(boxed_sf) => {
-                    found = &mut **boxed_sf;
+                SnailfishPart::Pair(sf) => {
+                    current_crumb = rest.to_vec();
+                    current_snailfish = sf;
                 }
             }
         }
-        Some(found)
     }
 
     // follows breadcrumbs, expecting to find a regular number. If so, returns a mutable reference
@@ -116,10 +135,33 @@ impl Snailfish {
         None
     }
 
+    fn find_number_breadcrumbs_recursive(
+        &mut self,
+        current_crumb: BreadCrumbs,
+        so_far: &mut Vec<BreadCrumbs>,
+    ) {
+        let found_number = self.follow_for_number(current_crumb.clone());
+        match found_number {
+            Some(_) => {
+                so_far.push(current_crumb);
+            }
+            None => {
+                let mut extend_left = current_crumb.clone();
+                extend_left.push(Direction::Left);
+                self.find_number_breadcrumbs_recursive(extend_left, so_far);
+
+                let mut extend_right = current_crumb.clone();
+                extend_right.push(Direction::Right);
+                self.find_number_breadcrumbs_recursive(extend_right, so_far);
+            }
+        }
+    }
+
     // very important utility method to find ALL sets of breadcrumbs which result in a number
-    fn find_number_breadcrumbs(&self) -> Vec<BreadCrumbs> {
-        //TODO (hard?)
-        vec![]
+    fn find_number_breadcrumbs(&mut self) -> Vec<BreadCrumbs> {
+        let mut found_crumbs = vec![];
+        self.find_number_breadcrumbs_recursive(BreadCrumbs(vec![]), &mut found_crumbs);
+        found_crumbs
     }
 
     fn find_right_number_part(&mut self, breadcrumbs: BreadCrumbs) -> Option<&mut SnailfishPart> {
@@ -184,6 +226,67 @@ impl Snailfish {
         self.find_explosion_with_nesting(0)
     }
 
+    fn do_explosion(&mut self) -> bool {
+        let exploded = self.find_explosion();
+        match exploded {
+            None => false,
+            Some(crumbs) => {
+                let exploded_part = self.follow_breadcrumbs(crumbs.clone()).unwrap();
+
+                let first_number = match exploded_part {
+                    SnailfishPart::Regular(_) => {
+                        panic!("exploded on a non-pair? Something's gone very wrong!")
+                    }
+                    SnailfishPart::Pair(child_sf) => match child_sf.first {
+                        SnailfishPart::Regular(n) => n,
+                        SnailfishPart::Pair(_) => {
+                            panic!("first part of exploded pair is not a number?")
+                        }
+                    },
+                };
+
+                let second_number = match exploded_part {
+                    SnailfishPart::Regular(_) => {
+                        panic!("exploded on a non-pair? Something's gone very wrong!")
+                    }
+                    SnailfishPart::Pair(child_sf) => match child_sf.second {
+                        SnailfishPart::Regular(n) => n,
+                        SnailfishPart::Pair(_) => {
+                            panic!("first part of exploded pair is not a number?")
+                        }
+                    },
+                };
+
+                // replace pair with number 0
+                *exploded_part = SnailfishPart::Regular(0);
+
+                // replace number on left, if it exists
+                let left_number = self.find_left_number_part(crumbs.clone());
+                if let Some(part) = left_number {
+                    if let SnailfishPart::Regular(n) = part {
+                        let new_num = *n + first_number;
+                        *part = SnailfishPart::Regular(new_num);
+                    } else {
+                        panic!("found a number but it's not a number??");
+                    }
+                }
+
+                // replace number on right, if it exists
+                let right_number = self.find_right_number_part(crumbs);
+                if let Some(part) = right_number {
+                    if let SnailfishPart::Regular(n) = part {
+                        let new_num = *n + second_number;
+                        *part = SnailfishPart::Regular(new_num);
+                    } else {
+                        panic!("found a number but it's not a number??");
+                    }
+                }
+
+                true
+            }
+        }
+    }
+
     // sees if a split is possible, recursively, on a part. Does the split if possible
     // (on the first such number), and returns a bool indicating if a split was done or not
     fn do_split(&mut self) -> bool {
@@ -193,6 +296,53 @@ impl Snailfish {
         }
         self.second.do_split()
     }
+
+    // keeps exploding until no more can be done, and returns a bool indicating if any
+    // were done or not
+    fn keep_exploding(&mut self) -> bool {
+        let mut is_exploding = true;
+        let mut any = false;
+        while is_exploding {
+            is_exploding = self.do_explosion();
+            if is_exploding {
+                any = true;
+            }
+        }
+        any
+    }
+
+    fn reduce(&mut self) {
+        let mut is_splitting = true;
+        let mut is_exploding = true;
+        while is_exploding || is_splitting {
+            is_exploding = self.keep_exploding();
+            is_splitting = self.do_split();
+        }
+    }
+
+    fn magnitude(&self) -> usize {
+        let left_mag = self.first.magnitude();
+        let right_mag = self.second.magnitude();
+        3 * left_mag + 2 * right_mag
+    }
+}
+
+fn add_snailfish(left: Snailfish, right: Snailfish) -> Snailfish {
+    let mut added = Snailfish {
+        first: SnailfishPart::Pair(Box::new(left)),
+        second: SnailfishPart::Pair(Box::new(right)),
+    };
+    added.reduce();
+    added
+}
+
+fn add_list(nums: Vec<Snailfish>) -> Snailfish {
+    let mut result = nums.clone().into_iter().nth(0).unwrap();
+    let rest = nums[1..].to_vec();
+    for sf in rest {
+        result = add_snailfish(result, sf);
+    }
+    result
 }
 
 fn parse_part(val: &Value) -> SnailfishPart {
@@ -226,22 +376,11 @@ fn read_file() -> Vec<Snailfish> {
 }
 
 fn solve_part_1(nums: Vec<Snailfish>) -> usize {
-    //todo
-    0
+    let sum_sf = add_list(nums);
+    sum_sf.magnitude()
 }
 
 pub fn part_1() -> usize {
     let pairs = read_file();
-    for pair in pairs.iter() {
-        println!("pair is {:?}", pair);
-        let mut explode = pair.clone();
-        let did_it_explode = explode.find_explosion();
-        if did_it_explode.is_some() {
-            println!("it explodes!");
-            println!("path is {:?}", did_it_explode.unwrap());
-        } else {
-            println!("no explosion");
-        }
-    }
     solve_part_1(pairs)
 }
