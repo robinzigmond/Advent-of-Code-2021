@@ -84,7 +84,7 @@ impl Steps {
 }
 
 // types used for part 2
-/*#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Cuboid {
     x_min: isize,
     x_max: isize,
@@ -184,11 +184,20 @@ impl Cuboid {
         // of the just added one, the first those which were already part of self.
         // This is to be able to handle correctly adding a cuboid which intersects more
         // than one existing one.
+        //println!("intersection of {:?} with {:?}", self, other);
         match self.intersection_area(other) {
-            None => (vec![*self], vec![]),
+            None => (vec![*self], vec![*other]),
             Some(intersection) => {
-                let leftover = self.remove(&intersection);
-                (leftover, vec![intersection])
+                // if new area is totally contained within an existing cuboid, don't need
+                // anything new. Need to return it explicitly to avoid infinite loops
+                if &intersection == other {
+                    (vec![], vec![])
+                } else {
+                    let leftover = self.remove(&intersection);
+                    //println!("intersection in {:?}", intersection);
+                    //println!("left over: {:?}", leftover);
+                    (leftover, vec![intersection])
+                }
             }
         }
     }
@@ -197,6 +206,7 @@ impl Cuboid {
         match self.intersection_area(other) {
             None => vec![*self],
             Some(intersection) => {
+                //println!("removing {:?} from {:?}", other, self);
                 let mut remaining = vec![];
 
                 let Self {
@@ -216,37 +226,31 @@ impl Cuboid {
                     z_min: intersection_z_min,
                     z_max: intersection_z_max,
                 } = intersection;
-
+                //println!("intersection is {:?}", intersection);
                 let x_points = [*x_min, intersection_x_min, intersection_x_max, *x_max];
                 let y_points = [*y_min, intersection_y_min, intersection_y_max, *y_max];
                 let z_points = [*z_min, intersection_z_min, intersection_z_max, *z_max];
 
                 for x_index in 1..4 {
-                    if x_index != 2 {
-                        let diff = x_points[x_index] - x_points[x_index - 1];
-                        if diff > 0 {
-                            for y_index in 1..4 {
-                                if y_index != 2 {
-                                    let diff = y_points[y_index] - y_points[y_index - 1];
-                                    if diff > 0 {
-                                        for z_index in 1..4 {
-                                            if z_index != 2 {
-                                                let diff =
-                                                    z_points[z_index] - z_points[z_index - 1];
-                                                if diff > 0 {
-                                                    let box_part = Self {
-                                                        x_min: x_points[x_index - 1],
-                                                        x_max: x_points[x_index],
-                                                        y_min: y_points[y_index - 1],
-                                                        y_max: y_points[y_index],
-                                                        z_min: z_points[z_index - 1],
-                                                        z_max: z_points[z_index],
-                                                    };
-                                                    remaining.push(box_part);
-                                                }
-                                            }
-                                        }
-                                    }
+                    for y_index in 1..4 {
+                        for z_index in 1..4 {
+                            if (x_index, y_index, z_index) != (2, 2, 2) {
+                                let x_diff = x_points[x_index] - x_points[x_index - 1];
+                                let y_diff = y_points[y_index] - y_points[y_index - 1];
+                                let z_diff = z_points[z_index] - z_points[z_index - 1];
+                                if x_diff > 0 && y_diff > 0 && z_diff > 0 {
+                                    let box_part = Self {
+                                        x_min: x_points[x_index - 1]
+                                            + if x_index == 3 { 1 } else { 0 },
+                                        x_max: x_points[x_index] - if x_index == 1 { 1 } else { 0 },
+                                        y_min: y_points[y_index - 1]
+                                            + if y_index == 3 { 1 } else { 0 },
+                                        y_max: y_points[y_index] - if y_index == 1 { 1 } else { 0 },
+                                        z_min: z_points[z_index - 1]
+                                            + if z_index == 3 { 1 } else { 0 },
+                                        z_max: z_points[z_index] - if z_index == 1 { 1 } else { 0 },
+                                    };
+                                    remaining.push(box_part);
                                 }
                             }
                         }
@@ -269,8 +273,8 @@ impl OnArea {
 
     fn add_cuboid(&mut self, cuboid: Cuboid) {
         // need to get the process started!
-        //println!("adding cuboid {:?}", cuboid);
-        println!("starting to add. Currently {:?}", self.0);
+        println!("adding cuboid {:?}", cuboid);
+        //println!("starting to add. Currently {:?}", self.0);
         if self.0.is_empty() {
             self.0.push(cuboid);
         } else {
@@ -279,10 +283,28 @@ impl OnArea {
             for old in &self.0 {
                 let (existing, not_existing) = old.intersection(&cuboid);
                 new.extend_from_slice(&existing);
-                new_parts.extend_from_slice(&not_existing);
+                if existing.len() == 1 {
+                    // this only happens when the new cuboid is distinct from any existing ones.
+                    // In this case, rather than building a list of "new" pieces (which leads to infinite recursion)
+                    // we just add the existing one directly.
+                    new.extend_from_slice(&not_existing);
+                } else {
+                    //println!("new parts to add: {:?}", not_existing);
+                    //new_parts.extend_from_slice(&not_existing);
+                    /*for part in not_existing {
+                        if !new_parts.contains(&part) {
+                            new_parts.push(part);
+                        }
+                    }*/
+                    //surely won't work!!
+                    new.extend_from_slice(&not_existing);
+                }
             }
             *self = OnArea(new);
+            //println!("new parts: {:?}", new_parts);
+            println!("{} new parts to add", new_parts.len());
             for new in new_parts {
+                println!("adding new part {:?}", new);
                 self.add_cuboid(new);
             }
         }
@@ -298,8 +320,9 @@ impl OnArea {
     }
 
     fn process_step(&mut self, step: Step) {
-        println!("current area: {:?}", self.0);
-        println!("processing step {:?}", step);
+        //println!("current area: {:?}", self.0);
+        //println!("processing step {:?}", step);
+        //println!("starting from: {:?}", self.0);
         let cuboid = Cuboid::from_step(&step);
         match step.state {
             CubeState::On => {
@@ -309,22 +332,25 @@ impl OnArea {
                 self.remove_cuboid(cuboid);
             }
         }
-        println!("current area: {:?}", self.0);
+        //println!("result: {:?}", self.0);
     }
 
     fn process_all(&mut self, steps: Steps) {
-        //let mut count = 1;
+        let mut count = 1;
         for step in steps.0 {
-            //println!("doing step {}", count);
+            println!("doing step {}", count);
             self.process_step(step);
-            //count += 1;
+            /*if count > 5 {
+                break;
+            }*/
+            count += 1;
         }
     }
 
     fn count_cubes(&self) -> u64 {
         self.0.iter().map(|cuboid| cuboid.volume()).sum()
     }
-}*/
+}
 
 fn parse_state(word: &str) -> CubeState {
     match word {
@@ -380,7 +406,7 @@ pub fn part_1() -> usize {
     solve_part_1(steps)
 }
 
-/*fn solve_part_2(steps: Steps) -> u64 {
+fn solve_part_2(steps: Steps) -> u64 {
     let mut on = OnArea::new();
     on.process_all(steps);
     on.count_cubes()
@@ -389,4 +415,4 @@ pub fn part_1() -> usize {
 pub fn part_2() -> u64 {
     let steps = read_file();
     solve_part_2(steps)
-}*/
+}
