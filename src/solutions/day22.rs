@@ -193,10 +193,12 @@ impl Cuboid {
                 if &intersection == other {
                     (vec![], vec![])
                 } else {
-                    let leftover = self.remove(&intersection);
+                    let mut old = self.remove(&intersection);
+                    old.push(intersection);
+                    let new = other.remove(&intersection);
                     //println!("intersection in {:?}", intersection);
                     //println!("left over: {:?}", leftover);
-                    (leftover, vec![intersection])
+                    (old, new)
                 }
             }
         }
@@ -230,7 +232,12 @@ impl Cuboid {
                 let x_points = [*x_min, intersection_x_min, intersection_x_max, *x_max];
                 let y_points = [*y_min, intersection_y_min, intersection_y_max, *y_max];
                 let z_points = [*z_min, intersection_z_min, intersection_z_max, *z_max];
-
+                /*need to somehow rewrite this to "merge" different cuboids together where this is possible!
+                (as number is going up exponentially each step, to soon reach the millions and beyond!)
+                Can merge when 2 or more cuboids have:
+                - the same min and max in 2 of the 3 dimensions
+                - consecutive values in the third (ie. the min of one is 1 more than the max of the last
+                It should be possible to compute this from the loop below...*/
                 for x_index in 1..4 {
                     for y_index in 1..4 {
                         for z_index in 1..4 {
@@ -273,13 +280,14 @@ impl OnArea {
 
     fn add_cuboid(&mut self, cuboid: Cuboid) {
         // need to get the process started!
-        println!("adding cuboid {:?}", cuboid);
+        //println!("adding cuboid {:?}", cuboid);
         //println!("starting to add. Currently {:?}", self.0);
         if self.0.is_empty() {
             self.0.push(cuboid);
         } else {
             let mut new = vec![];
             let mut new_parts = vec![];
+            //println!("cuboids at the moment: {}", self.0.len());
             for old in &self.0 {
                 let (existing, not_existing) = old.intersection(&cuboid);
                 new.extend_from_slice(&existing);
@@ -287,24 +295,29 @@ impl OnArea {
                     // this only happens when the new cuboid is distinct from any existing ones.
                     // In this case, rather than building a list of "new" pieces (which leads to infinite recursion)
                     // we just add the existing one directly.
-                    new.extend_from_slice(&not_existing);
+                    //new.extend_from_slice(&not_existing);
+                    for part in not_existing {
+                        if !new.contains(&part) {
+                            new.push(part);
+                        }
+                    }
                 } else {
                     //println!("new parts to add: {:?}", not_existing);
                     //new_parts.extend_from_slice(&not_existing);
-                    /*for part in not_existing {
+                    for part in not_existing {
                         if !new_parts.contains(&part) {
                             new_parts.push(part);
                         }
-                    }*/
+                    }
                     //surely won't work!!
-                    new.extend_from_slice(&not_existing);
+                    //new.extend_from_slice(&not_existing);
                 }
             }
             *self = OnArea(new);
             //println!("new parts: {:?}", new_parts);
-            println!("{} new parts to add", new_parts.len());
+            //println!("{} new parts to add", new_parts.len());
             for new in new_parts {
-                println!("adding new part {:?}", new);
+                //println!("adding new part {:?}", new);
                 self.add_cuboid(new);
             }
         }
@@ -321,7 +334,7 @@ impl OnArea {
 
     fn process_step(&mut self, step: Step) {
         //println!("current area: {:?}", self.0);
-        //println!("processing step {:?}", step);
+        println!("processing step {:?}", step);
         //println!("starting from: {:?}", self.0);
         let cuboid = Cuboid::from_step(&step);
         match step.state {
@@ -333,6 +346,7 @@ impl OnArea {
             }
         }
         //println!("result: {:?}", self.0);
+        println!("now have {} cuboids", self.0.len());
     }
 
     fn process_all(&mut self, steps: Steps) {
