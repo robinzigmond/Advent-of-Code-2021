@@ -84,7 +84,7 @@ impl Steps {
 }
 
 // types used for part 2
-#[derive(Clone, Copy, Debug, PartialEq)]
+/*#[derive(Clone, Copy, Debug, PartialEq)]
 struct Cuboid {
     x_min: isize,
     x_max: isize,
@@ -302,7 +302,6 @@ impl OnArea {
                         }
                     }
                 } else {
-                    //println!("new parts to add: {:?}", not_existing);
                     //new_parts.extend_from_slice(&not_existing);
                     for part in not_existing {
                         if !new_parts.contains(&part) {
@@ -316,7 +315,11 @@ impl OnArea {
             *self = OnArea(new);
             //println!("new parts: {:?}", new_parts);
             //println!("{} new parts to add", new_parts.len());
+            /*if new_parts.len() > 0 {
+                println!("{} new parts to add", new_parts.len());
+            }*/
             for new in new_parts {
+                //println!("adding one");
                 //println!("adding new part {:?}", new);
                 self.add_cuboid(new);
             }
@@ -364,7 +367,7 @@ impl OnArea {
     fn count_cubes(&self) -> u64 {
         self.0.iter().map(|cuboid| cuboid.volume()).sum()
     }
-}
+}*/
 
 fn parse_state(word: &str) -> CubeState {
     match word {
@@ -420,7 +423,7 @@ pub fn part_1() -> usize {
     solve_part_1(steps)
 }
 
-fn solve_part_2(steps: Steps) -> u64 {
+/*fn solve_part_2(steps: Steps) -> u64 {
     let mut on = OnArea::new();
     on.process_all(steps);
     on.count_cubes()
@@ -429,4 +432,4 @@ fn solve_part_2(steps: Steps) -> u64 {
 pub fn part_2() -> u64 {
     let steps = read_file();
     solve_part_2(steps)
-}
+}*/
