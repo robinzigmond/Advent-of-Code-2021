@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
@@ -84,7 +84,7 @@ impl Steps {
 }
 
 // types used for part 2
-/*#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Cuboid {
     x_min: isize,
     x_max: isize,
@@ -290,39 +290,88 @@ impl OnArea {
             //println!("cuboids at the moment: {}", self.0.len());
             for old in &self.0 {
                 let (existing, not_existing) = old.intersection(&cuboid);
-                new.extend_from_slice(&existing);
-                if existing.len() == 1 {
-                    // this only happens when the new cuboid is distinct from any existing ones.
-                    // In this case, rather than building a list of "new" pieces (which leads to infinite recursion)
-                    // we just add the existing one directly.
-                    //new.extend_from_slice(&not_existing);
-                    for part in not_existing {
-                        if !new.contains(&part) {
-                            new.push(part);
-                        }
+                //println!("existing: {:?}", existing);
+                //println!("not existing: {:?}", not_existing);
+                for &part in &existing {
+                    if !new.contains(&part) {
+                        new.push(part);
                     }
+                }
+                //new.extend_from_slice(&existing);
+                if existing.len() == 1 && not_existing.len() == 1 {
+                    // this only happens when the new cuboid doesn't intersect the current one.
+                    // (This should be the most common case!)
+                    // In this case we just add the "Not existing" (ie new) one to the "new" vector so
+                    // that it gets directly included.
+                    if !new.contains(&not_existing[0]) {
+                        new.push(not_existing[0]);
+                    }
+                    //new.extend_from_slice(&not_existing);
+                    /*for part in not_existing {
+                        if !new.contains(&part) {
+                            if !self.0.contains(&part) {
+                                new.push(part);
+                            }
+                        }
+                    }*/
                 } else {
                     //new_parts.extend_from_slice(&not_existing);
                     for part in not_existing {
                         if !new_parts.contains(&part) {
+                            //if !self.0.contains(&part) {
                             new_parts.push(part);
+                            //}
                         }
                     }
                     //surely won't work!!
                     //new.extend_from_slice(&not_existing);
                 }
             }
-            *self = OnArea(new);
-            //println!("new parts: {:?}", new_parts);
-            //println!("{} new parts to add", new_parts.len());
-            /*if new_parts.len() > 0 {
-                println!("{} new parts to add", new_parts.len());
-            }*/
-            for new in new_parts {
+            /*27/12 - don't think this is a good way to do it. The combination of width and depth
+            - new_parts being quite long and generating similarly long new_parts in each of the many
+            recursive calls - slows things down far too much.
+            I believe this is logically correct, but might need a new way to solve the problem, which is:
+            how to cope with pieces that intersect MORE THAN ONE existing piece?
+            I have one idea right now, although can't quite seem to code it:
+            - for each "not existing" part, go through each existing one (that is, self.0), and
+            successively remove those from "it". "it" is in quotes because remove produces several,
+            so we have to generate an array/vector and keep doing this with all. That makes it tricky
+            to write - and it could hurt performance. But it should avoid any recursive calls, because
+            we just add these to "new" and get them added with no recursion!
+            Will it always work correctly? Could we not end up with overlapping pieces? Needs more thought...
+            first, assume there isn't a problem and just not bother!
+            */
+            println!(
+                "initially {} new parts from broken-up existing ones",
+                new.len()
+            );
+            println!("{} genuinely new parts", new_parts.len());
+            let mut temp = OnArea(new_parts);
+            temp.tidy_all();
+            println!("{} after tidy", temp.0.len());
+            for part in &temp.0 {
+                for old in &self.0 {
+                    let remaining = part.remove(old);
+                    for new_part in remaining {
+                        if !new.contains(&new_part) {
+                            new.push(new_part);
+                        }
+                    }
+                }
+            }
+            println!("ended up with {}", new.len());
+            //let mut left = new_parts.len();
+            /*for part in new_new {
                 //println!("adding one");
                 //println!("adding new part {:?}", new);
-                self.add_cuboid(new);
-            }
+                //println!("{} new parts left to add", left);
+                // no need to add anything we already have!
+                if !new.contains(&part) {
+                    new.push(part);
+                }
+                //left -= 1;
+            }*/
+            *self = OnArea(new);
         }
     }
 
@@ -335,8 +384,111 @@ impl OnArea {
         *self = OnArea(new);
     }
 
+    fn tidy(&mut self, co_ord: &str) {
+        // cleans up a set of cuboids by putting together those with the same bounds in 2
+        // dimensions and where they are next to each other in the 3rd
+        //println!("tidying from {:?}", self.0);
+        self.0.sort_unstable_by(|a, b| match co_ord {
+            "x" => {
+                let mut cmp = a.y_min.cmp(&b.y_min);
+                if cmp == Ordering::Equal {
+                    cmp = a.z_min.cmp(&b.z_min);
+                    if cmp == Ordering::Equal {
+                        cmp = a.x_min.cmp(&b.x_min);
+                    }
+                }
+                cmp
+            }
+            "y" => {
+                let mut cmp = a.z_min.cmp(&b.z_min);
+                if cmp == Ordering::Equal {
+                    cmp = a.x_min.cmp(&b.x_min);
+                    if cmp == Ordering::Equal {
+                        cmp = a.y_min.cmp(&b.y_min);
+                    }
+                }
+                cmp
+            }
+            "z" => {
+                let mut cmp = a.x_min.cmp(&b.x_min);
+                if cmp == Ordering::Equal {
+                    cmp = a.y_min.cmp(&b.y_min);
+                    if cmp == Ordering::Equal {
+                        cmp = a.z_min.cmp(&b.z_min);
+                    }
+                }
+                cmp
+            }
+            _ => panic!("blurgh"),
+        });
+        let mut tidied: Vec<Cuboid> = vec![];
+        for cuboid in &self.0 {
+            let Cuboid {
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                z_min,
+                z_max,
+            } = cuboid;
+
+            let clone = tidied.clone();
+            let found = clone.iter().enumerate().find(|(_, other)| match co_ord {
+                "x" => {
+                    other.y_min == *y_min
+                        && other.z_max == *z_max
+                        && other.y_min == *y_min
+                        && other.y_max == *y_max
+                        && other.x_max == *x_min - 1
+                }
+                "y" => {
+                    other.x_min == *x_min
+                        && other.x_max == *x_max
+                        && other.z_min == *z_min
+                        && other.z_max == *z_max
+                        && other.y_max == *y_min - 1
+                }
+                "z" => {
+                    other.x_min == *x_min
+                        && other.x_max == *x_max
+                        && other.y_min == *y_min
+                        && other.y_max == *y_max
+                        && other.z_max == *z_min - 1
+                }
+                _ => panic!("won't happen"),
+            });
+
+            match found {
+                None => tidied.push(*cuboid),
+                Some((pos, to_join)) => {
+                    tidied.remove(pos);
+                    let combined = Cuboid {
+                        x_min: if co_ord == "x" { to_join.x_min } else { *x_min },
+                        x_max: *x_max,
+                        y_min: if co_ord == "y" { to_join.y_min } else { *y_min },
+                        y_max: *y_max,
+                        z_min: if co_ord == "z" { to_join.z_min } else { *z_min },
+                        z_max: *z_max,
+                    };
+                    tidied.push(combined);
+                }
+            }
+        }
+        *self = OnArea(tidied);
+        //println!("result is {:?}", self.0);
+    }
+
+    fn tidy_all(&mut self) {
+        self.tidy("z");
+        self.tidy("y");
+        self.tidy("x");
+        //do second time, for reasons
+        self.tidy("z");
+        self.tidy("y");
+        self.tidy("x");
+    }
+
     fn process_step(&mut self, step: Step) {
-        //println!("current area: {:?}", self.0);
         println!("processing step {:?}", step);
         //println!("starting from: {:?}", self.0);
         let cuboid = Cuboid::from_step(&step);
@@ -348,8 +500,9 @@ impl OnArea {
                 self.remove_cuboid(cuboid);
             }
         }
-        //println!("result: {:?}", self.0);
+        self.tidy_all();
         println!("now have {} cuboids", self.0.len());
+        //println!("{:?}", self.0);
     }
 
     fn process_all(&mut self, steps: Steps) {
@@ -367,7 +520,7 @@ impl OnArea {
     fn count_cubes(&self) -> u64 {
         self.0.iter().map(|cuboid| cuboid.volume()).sum()
     }
-}*/
+}
 
 fn parse_state(word: &str) -> CubeState {
     match word {
@@ -423,7 +576,7 @@ pub fn part_1() -> usize {
     solve_part_1(steps)
 }
 
-/*fn solve_part_2(steps: Steps) -> u64 {
+fn solve_part_2(steps: Steps) -> u64 {
     let mut on = OnArea::new();
     on.process_all(steps);
     on.count_cubes()
@@ -432,4 +585,4 @@ pub fn part_1() -> usize {
 pub fn part_2() -> u64 {
     let steps = read_file();
     solve_part_2(steps)
-}*/
+}
