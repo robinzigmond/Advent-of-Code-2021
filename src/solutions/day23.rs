@@ -45,14 +45,14 @@ impl fmt::Debug for Move {
 struct Burrow(HashMap<BurrowSpace, Amphipod>);
 
 impl Burrow {
-    fn is_finished(&self) -> bool {
+    fn is_finished(&self, size: u8) -> bool {
         for amphipod_type in [
             Amphipod::Amber,
             Amphipod::Bronze,
             Amphipod::Copper,
             Amphipod::Desert,
         ] {
-            for pos in 1..=2 {
+            for pos in 1..=size {
                 let home_pos = BurrowSpace::Home(amphipod_type, pos);
                 if self.0.get(&home_pos) != Some(&amphipod_type) {
                     return false;
@@ -82,25 +82,34 @@ impl Burrow {
     c) home room is not currently occupied by any amphipods other than its "mate"
     These rules are encoded in the following method.
     */
-    fn get_valid_moves(&self) -> Vec<(Move, usize)> {
+    //major rewrite needed for part 2:
+    //- anything that refers to front_pos and back_pos (just first branch) needs to be more generic.
+    //- similarly, the part where we subtract from 3 to get the "other pos", either pass new "size" param
+    //and subtract from (1 + size), or do differently!
+    fn get_valid_moves(&self, size: u8) -> Vec<(Move, usize)> {
         let mut valid = vec![];
-        for (position, &amphipod_type) in &self.0 {
+        'outer: for (position, &amphipod_type) in &self.0 {
             match position {
                 BurrowSpace::Corridor(pos) => {
                     // can only move into destination room - determine which space
                     // and check path is free
-                    let back_pos = BurrowSpace::Home(amphipod_type, 2);
-                    let front_pos = BurrowSpace::Home(amphipod_type, 1);
-                    let destination = match self.get_occupier(&back_pos) {
-                        None => back_pos,
-                        Some(occupier) => {
-                            if occupier == &amphipod_type {
-                                front_pos
-                            } else {
-                                continue;
+                    let mut destination = BurrowSpace::Home(amphipod_type, 1);
+                    for home_pos in (2..=size).rev() {
+                        let test_pos = BurrowSpace::Home(amphipod_type, home_pos);
+                        match self.get_occupier(&test_pos) {
+                            None => {
+                                destination = test_pos;
+                                break;
+                            }
+                            Some(already_home) => {
+                                // can't move home if another amphipod of the wrong time is still
+                                // there
+                                if already_home != &amphipod_type {
+                                    continue 'outer;
+                                }
                             }
                         }
-                    };
+                    }
                     let threshold_position = match amphipod_type {
                         Amphipod::Amber => 3,
                         Amphipod::Bronze => 5,
@@ -114,8 +123,10 @@ impl Burrow {
                     };
                     let mut spaces: Vec<BurrowSpace> =
                         positions.map(BurrowSpace::Corridor).collect();
-                    if destination == back_pos {
-                        spaces.push(front_pos);
+                    if let BurrowSpace::Home(_, pos) = destination {
+                        for intervening in 1..pos {
+                            spaces.push(BurrowSpace::Home(amphipod_type, intervening));
+                        }
                     }
                     spaces.push(destination);
                     if spaces
@@ -139,18 +150,25 @@ impl Burrow {
                 }
                 BurrowSpace::Home(home_type, home_pos) => {
                     // we can't move the amphipod if it's in its correct home and
-                    // the other home space has an amphipod of the same type or
-                    // is empty
+                    // all other home space have an amphipod of the same type or
+                    // are empty
+                    let mut is_valid = false;
                     if home_type == &amphipod_type {
-                        let other_pos = 3 - home_pos;
-                        match self.get_occupier(&BurrowSpace::Home(*home_type, other_pos)) {
-                            Some(occupying_type) => {
-                                if occupying_type == home_type {
-                                    continue;
+                        for other_pos in 1..=size {
+                            if let Some(occupying_type) =
+                                self.get_occupier(&BurrowSpace::Home(*home_type, other_pos))
+                            {
+                                if occupying_type != home_type {
+                                    is_valid = true;
+                                    break;
                                 }
                             }
-                            None => continue,
                         }
+                    } else {
+                        is_valid = true;
+                    }
+                    if !is_valid {
+                        continue 'outer;
                     }
                     // check available spaces in corridor, that aren't thresholds
                     let threshold_position = match home_type {
@@ -177,8 +195,8 @@ impl Burrow {
                             let mut path: Vec<BurrowSpace> =
                                 positions.map(|pos| BurrowSpace::Corridor(pos)).collect();
 
-                            if *home_pos == 2 {
-                                path.push(BurrowSpace::Home(*home_type, 1));
+                            for pos in 1..*home_pos {
+                                path.push(BurrowSpace::Home(*home_type, pos));
                             }
 
                             if path.iter().all(|space| self.get_occupier(space).is_none()) {
@@ -216,8 +234,11 @@ impl Burrow {
     // now about 40-45 seconds in release mode, for test data.
     // around 2 hours for real data (between 1 and 2 anyway - I left it running...)
     // Not good, but at least it's an answer!
+    // For part 2, takes even longer. After about 2-and-a-half hours of running I returned to
+    // it and put in the latest "shortest found", and before long got it right!
     fn find_solutions_and_cost_recursive(
         &self,
+        size: u8,
         current_path: Vec<Move>,
         current_cost: usize,
         lowest_cost: Option<usize>,
@@ -239,12 +260,12 @@ impl Burrow {
 
         // if we've finished the current path, check its cost and mark it as new lowest if apprporiate,
         // then (whether lowest or not) exit by returning
-        if updated.is_finished() {
+        if updated.is_finished(size) {
             return match lowest_cost {
                 None => Some(current_cost),
                 Some(old) => {
                     if current_cost < old {
-                        println!("found shortest path so far of cost {}", current_cost);
+                        // println!("found shortest path so far of cost {}", current_cost);
                         Some(current_cost)
                     } else {
                         None
@@ -254,7 +275,7 @@ impl Burrow {
         }
 
         // find possible moves from where we are.
-        let next_moves = updated.get_valid_moves(/*test*/);
+        let next_moves = updated.get_valid_moves(size);
 
         // If none, exit this path without checking the cost
         if next_moves.is_empty() {
@@ -268,21 +289,20 @@ impl Burrow {
             new_path.push(move_);
             let new_cost = current_cost + cost;
             if let Some(lower) =
-                self.find_solutions_and_cost_recursive(new_path, new_cost, new_lowest)
+                self.find_solutions_and_cost_recursive(size, new_path, new_cost, new_lowest)
             {
                 new_lowest = Some(lower);
             }
-
         }
         // for info while running!
-        if current_path.len() <= 3 {
+        /* if current_path.len() <= 3 {
             println!("completely searched path beginning {:?}", current_path);
-        }
+        } */
         new_lowest
     }
 
-    fn find_lowest_cost(&self) -> usize {
-        self.find_solutions_and_cost_recursive(vec![], 0, None)
+    fn find_lowest_cost(&self, size: u8) -> usize {
+        self.find_solutions_and_cost_recursive(size, vec![], 0, None)
             .unwrap()
     }
 }
@@ -309,34 +329,41 @@ fn parse_amphipod(c: char) -> Option<Amphipod> {
     }
 }
 
-fn read_file() -> Burrow {
+fn read_file(extend: bool) -> Burrow {
     let mut file = File::open("./input/input23.txt").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
-    let lines: Vec<&str> = contents.lines().collect();
-    let third_line = lines[2];
-    let fourth_line = lines[3];
+    let mut lines: Vec<&str> = contents.lines().collect();
+    if extend {
+        lines.insert(3, "  #D#C#B#A#");
+        lines.insert(4, "  #D#B#A#C#");
+    }
     let mut positions = HashMap::new();
 
-    for (idx, line) in vec![third_line, fourth_line].iter().enumerate() {
+    let mut home_pos = 1;
+    for line in lines.iter().skip(2) {
         for (col, c) in line.chars().enumerate() {
             if let Some(amphipod) = parse_amphipod(c) {
-                let is_third = idx == 0;
-                let home_pos = if is_third { 1 } else { 2 };
                 let position = read_position(col as u8, home_pos);
                 positions.insert(position, amphipod);
             }
         }
+        home_pos += 1;
     }
 
     Burrow(positions)
 }
 
-fn solve_part_1(burrow: Burrow) -> usize {
-    burrow.find_lowest_cost()
+fn solve(burrow: Burrow, size: u8) -> usize {
+    burrow.find_lowest_cost(size)
 }
 
 pub fn part_1() -> usize {
-    let burrow = read_file();
-    solve_part_1(burrow)
+    let burrow = read_file(false);
+    solve(burrow, 2)
+}
+
+pub fn part_2() -> usize {
+    let extended_burrow = read_file(true);
+    solve(extended_burrow, 4)
 }
